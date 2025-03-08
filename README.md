@@ -1,6 +1,6 @@
-# Import CSV do PostgreSQL za pomocą SQLAlchemy
+# Import CSV do PostgreSQL za pomocą SQLAlchemy i Dockera
 
-Ten skrypt Python importuje pliki CSV do bazy danych PostgreSQL. Każdy plik CSV w podanym folderze jest zapisywany jako osobna tabela w bazie danych. Nazwa tabeli odpowiada nazwie pliku (bez rozszerzenia `.csv`).
+Ten skrypt Python importuje pliki CSV do bazy danych PostgreSQL. Każdy plik CSV w podanym folderze jest zapisywany jako osobna tabela w bazie danych. Jeśli w folderze znajdują się pliki o podobnych nazwach (np. `klienci.csv` i `klienci2.csv`), ich zawartość zostanie połączona i zapisania do tej samej tabeli.
 
 ## Wymagania
 - Python 3
@@ -63,27 +63,39 @@ Ten skrypt Python importuje pliki CSV do bazy danych PostgreSQL. Każdy plik CSV
 ## Jak działa skrypt?
 1. Pobiera listę plików `.csv` z folderu podanego w `--folder`.
 2. Wczytuje każdy plik do Pandas DataFrame.
-3. Tworzy tabelę o nazwie zgodnej z nazwą pliku (jeśli nie istnieje, zastępuje ją).
-4. Importuje dane do PostgreSQL.
+3. Jeśli kilka plików ma tę samą nazwę (z numerami, np. `klienci.csv` i `klienci2.csv`), dane są łączone do jednej tabeli.
+4. Tworzy tabelę o nazwie zgodnej z nazwą pliku (jeśli nie istnieje, dodaje nowe dane do istniejącej tabeli).
+5. Importuje dane do PostgreSQL.
 
 ## Przykład struktury plików CSV
 ### `pracownicy.csv`
 ```
 id,imie,nazwisko,email,wiek,stanowisko
-1,Jan,Kowalski,jan.kowalski@example.com,30,Inżynier
-2,Anna,Nowak,anna.nowak@example.com,25,Analityk
+1,Jan Kowalski,jan.kowalski@example.com,30,Inżynier
+2,Anna Nowak,anna.nowak@example.com,25,Analityk
 ```
 
-### `projekty.csv`
+### `klienci.csv`
 ```
-id,nazwa,opis,data_rozpoczecia,data_zakonczenia
-1,System CRM,Zarządzanie relacjami,2023-01-10,2023-06-30
+id,nazwa,email,kraj,telefon
+1,Firma X,contact@firmax.com,Polska,+48 600 123 456
+2,Firma Y,support@firmay.com,Niemcy,+49 170 987 654
 ```
+
+### `klienci2.csv`
+```
+id,nazwa,email,kraj,telefon
+3,TechNova,contact@technova.io,USA,+1 650 555 0199
+4,Innovate Solutions,info@innovatesol.eu,Holandia,+31 20 123 4567
+5,GreenTech,office@greentech.de,Niemcy,+49 30 789 6543
+```
+
+Po załadowaniu obydwu plików do bazy danych, tabela `klienci` zawierać będzie dane zarówno z `klienci.csv`, jak i `klienci2.csv`.
 
 ## Obsługa błędów
 - Jeśli folder nie istnieje, skrypt zgłosi błąd.
 - Jeśli plik CSV jest pusty lub nieprawidłowy, skrypt go pominie.
-- Jeśli tabela już istnieje, zostanie zastąpiona (`if_exists='replace'`).
+- Jeśli tabela już istnieje, nowe dane zostaną do niej dodane (`if_exists='append'`).
 
 ## Licencja
 MIT License
