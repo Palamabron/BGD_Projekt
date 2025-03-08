@@ -40,7 +40,7 @@ def import_csv_to_postgres(folder, db_user, db_password, db_host, db_port, db_na
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Import plików CSV do bazy PostgreSQL")
     
-    parser.add_argument("--folder", required=True, help="Ścieżka do folderu z plikami CSV")
+    parser.add_argument("--folder", default="csv_files", help="Ścieżka do folderu z plikami CSV")
     parser.add_argument("--db_user", default="postgres", help="Nazwa użytkownika PostgreSQL")
     parser.add_argument("--db_password", default="password", help="Hasło do PostgreSQL")
     parser.add_argument("--db_host", default="localhost", help="Adres hosta PostgreSQL")

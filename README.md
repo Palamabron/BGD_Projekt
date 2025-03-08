@@ -4,13 +4,16 @@ Ten skrypt Python importuje pliki CSV do bazy danych PostgreSQL. Każdy plik CSV
 
 ## Wymagania
 - Python 3
+- Docker + Docker Compose
 - PostgreSQL
-- Zainstalowane biblioteki Python:
+- Zainstalowane biblioteki Python (jeśli uruchamiasz lokalnie):
   ```bash
   pip install pandas sqlalchemy psycopg2-binary
   ```
 
 ## Instalacja i konfiguracja
+
+### Uruchomienie lokalne (bez Dockera)
 1. **Utwórz wirtualne środowisko (opcjonalnie):**
    ```bash
    python3 -m venv env
@@ -27,21 +30,35 @@ Ten skrypt Python importuje pliki CSV do bazy danych PostgreSQL. Każdy plik CSV
    - Utwórz folder `csv_files`.
    - Umieść tam pliki `.csv`.
 
-## Uruchamianie skryptu
+4. **Uruchom skrypt:**
+   ```bash
+   python import_csv_to_postgres.py --folder csv_files --db_user postgres --db_password secret --db_host 127.0.0.1 --db_port 5432 --db_name mydb
+   ```
 
-```bash
-python import_csv_to_postgres.py --folder csv_files \
-  --db_user postgres --db_password secret \
-  --db_host 127.0.0.1 --db_port 5432 --db_name mydb
+---
+### Uruchomienie w Dockerze
+
+1. **Zbuduj i uruchom kontenery:**
+   ```bash
+   docker-compose up --build
+   ```
+
+2. **(Opcjonalnie) Zatrzymaj kontenery:**
+   ```bash
+   docker-compose down
+   ```
+
+---
+## Struktura projektu
 ```
-
-### Argumenty:
-- `--folder` – ścieżka do folderu z plikami CSV (wymagane).
-- `--db_user` – użytkownik PostgreSQL (domyślnie: `postgres`).
-- `--db_password` – hasło do bazy danych (domyślnie: `password`).
-- `--db_host` – adres hosta PostgreSQL (domyślnie: `localhost`).
-- `--db_port` – port PostgreSQL (domyślnie: `5432`).
-- `--db_name` – nazwa bazy danych (domyślnie: `postgres`).
+├── csv_files/               # Folder z plikami CSV
+├── import_csv_to_postgres.py # Główny skrypt do importu danych
+├── Dockerfile               # Konfiguracja Dockera
+├── docker-compose.yml       # Konfiguracja Docker Compose
+├── requirements.txt         # Lista zależności
+├── .env                     # Plik z ustawieniami bazy danych (opcjonalnie)
+└── README.md                # Dokumentacja
+```
 
 ## Jak działa skrypt?
 1. Pobiera listę plików `.csv` z folderu podanego w `--folder`.
@@ -70,4 +87,3 @@ id,nazwa,opis,data_rozpoczecia,data_zakonczenia
 
 ## Licencja
 MIT License
-
