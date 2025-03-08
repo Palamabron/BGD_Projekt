@@ -1,0 +1,6 @@
+id,imie,nazwisko,email,wiek,stanowisko
+1,Jan,Kowalski,jan.kowalski@example.com,30,Inżynier
+2,Anna,Nowak,anna.nowak@example.com,25,Analityk
+3,Piotr,Wójcik,piotr.wojcik@example.com,45,Menedżer
+4,Karolina,Wiśniewska,karolina.wisniewska@example.com,28,Projektant
+5,Marcin,Adamski,marcin.adamski@example.com,35,Programista
