@@ -1,101 +1,112 @@
-# Import CSV do PostgreSQL za pomocą SQLAlchemy i Dockera
+# Kompleksowy Pipeline Danych z CSV do Data Lake
 
-Ten skrypt Python importuje pliki CSV do bazy danych PostgreSQL. Każdy plik CSV w podanym folderze jest zapisywany jako osobna tabela w bazie danych. Jeśli w folderze znajdują się pliki o podobnych nazwach (np. `klienci.csv` i `klienci2.csv`), ich zawartość zostanie połączona i zapisania do tej samej tabeli.
+Ten projekt implementuje pełny pipeline danych, który importuje pliki CSV do bazy PostgreSQL, monitoruje zmiany w bazie przy użyciu Debezium, przetwarza dane strumieniowo w Apache Spark oraz zapisuje wyniki w MinIO (kompatybilnym z S3).
+
+## Architektura
+
+System składa się z następujących komponentów:
+- **PostgreSQL** – baza danych do przechowywania danych z plików CSV.
+- **Python App** – aplikacja importująca pliki CSV do bazy danych.
+- **Kafka & Zookeeper** – system komunikacji asynchronicznej.
+- **Debezium** – narzędzie do przechwytywania zmian w bazie danych (CDC).  
+  *Uwaga:* Każdy konektor Debezium używa unikalnej nazwy replication slot, co zapobiega konfliktom.
+- **Apache Spark** – silnik do przetwarzania danych strumieniowych.  
+  Wprowadzono modyfikacje konfiguracji źródeł Kafka, takie jak ustawienie opcji `startingOffsets` oraz `failOnDataLoss`. Dodano także opóźnienie startu zapytań, aby dać brokerowi Kafka czas na utworzenie i propagację tematów.
+- **MinIO** – magazyn danych kompatybilny z S3, do którego zapisywane są wyniki przetwarzania (w formacie Parquet).
 
 ## Wymagania
-- Python 3
-- Docker + Docker Compose
-- PostgreSQL
-- Zainstalowane biblioteki Python (jeśli uruchamiasz lokalnie):
-  ```bash
-  pip install pandas sqlalchemy psycopg2-binary
-  ```
+- Docker
+- Docker Compose
 
-## Instalacja i konfiguracja
+## Struktura projektu
 
-### Uruchomienie lokalne (bez Dockera)
-1. **Utwórz wirtualne środowisko (opcjonalnie):**
-   ```bash
-   python3 -m venv env
-   source env/bin/activate  # Linux/MacOS
-   env\Scripts\activate  # Windows
-   ```
+```
+├── csv_files/               # Folder z plikami CSV
+├── spark-app/               # Aplikacja Spark do przetwarzania danych
+│   ├── Dockerfile           # Konfiguracja Dockera dla Spark
+│   ├── entrypoint.sh        # Skrypt startowy
+│   ├── requirements.txt     # Zależności Pythona dla Spark
+│   ├── setup_debezium.py    # Konfiguracja konektorów Debezium (używają unikalnych replication slotów)
+│   ├── setup_minio.py       # Konfiguracja MinIO
+│   └── spark_processor.py   # Kod przetwarzania danych w Spark (z konfiguracją źródeł Kafka)
+├── import_csv_to_postgres.py # Główny skrypt do importu danych CSV do PostgreSQL
+├── Dockerfile               # Konfiguracja Dockera (główny)
+├── docker-compose.yml       # Konfiguracja Docker Compose dla całego pipeline
+├── requirements.txt         # Lista zależności dla aplikacji
+├── .env                     # Plik z ustawieniami bazy danych
+└── README.md                # Dokumentacja projektu (to plik)
+```
 
-2. **Zainstaluj wymagane pakiety:**
-   ```bash
-   pip install pandas sqlalchemy psycopg2-binary
-   ```
+## Uruchomienie
 
-3. **Przygotuj pliki CSV:**
-   - Utwórz folder `csv_files`.
-   - Umieść tam pliki `.csv`.
+1. **Przygotuj pliki CSV**  
+   Umieść pliki CSV w folderze `csv_files`.
 
-4. **Uruchom skrypt:**
-   ```bash
-   python import_csv_to_postgres.py --folder csv_files --db_user postgres --db_password secret --db_host 127.0.0.1 --db_port 5432 --db_name mydb
-   ```
-
----
-### Uruchomienie w Dockerze
-
-1. **Zbuduj i uruchom kontenery:**
+2. **Uruchom system**  
+   W terminalu w katalogu głównym projektu:
    ```bash
    docker-compose up --build
    ```
 
-2. **(Opcjonalnie) Zatrzymaj kontenery:**
-   ```bash
-   docker-compose down
-   ```
+## Wprowadzone zmiany i konfiguracja
 
----
-## Struktura projektu
-```
-├── csv_files/               # Folder z plikami CSV
-├── import_csv_to_postgres.py # Główny skrypt do importu danych
-├── Dockerfile               # Konfiguracja Dockera
-├── docker-compose.yml       # Konfiguracja Docker Compose
-├── requirements.txt         # Lista zależności
-├── .env                     # Plik z ustawieniami bazy danych (opcjonalnie)
-└── README.md                # Dokumentacja
-```
+### Debezium
+- **Unikalne replication sloty:**  
+  W pliku `setup_debezium.py` każdy konektor (dla tabel: klienci, pracownicy, projekty) używa teraz unikalnej nazwy slotu:
+  - "debezium_klienci"
+  - "debezium_pracownicy"
+  - "debezium_projekty"
+  
+  Dzięki temu unika się konfliktów wynikających z próby użycia domyślnego slotu "debezium".
 
-## Jak działa skrypt?
-1. Pobiera listę plików `.csv` z folderu podanego w `--folder`.
-2. Wczytuje każdy plik do Pandas DataFrame.
-3. Jeśli kilka plików ma tę samą nazwę (z numerami, np. `klienci.csv` i `klienci2.csv`), dane są łączone do jednej tabeli.
-4. Tworzy tabelę o nazwie zgodnej z nazwą pliku (jeśli nie istnieje, dodaje nowe dane do istniejącej tabeli).
-5. Importuje dane do PostgreSQL.
+### Kafka
+- **Auto-create topics:**  
+  W docker-compose.yml dla usługi Kafka ustawiono zmienną:
+  ```yaml
+  KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+  ```
+  Dzięki temu tematy (m.in. `dbserver1.public.klienci`, `dbserver1.public.pracownicy`, `dbserver1.public.projekty`) są tworzone automatycznie, gdy aplikacja Kafka Connect lub Spark próbują z nich korzystać.
 
-## Przykład struktury plików CSV
-### `pracownicy.csv`
-```
-id,imie,nazwisko,email,wiek,stanowisko
-1,Jan Kowalski,jan.kowalski@example.com,30,Inżynier
-2,Anna Nowak,anna.nowak@example.com,25,Analityk
-```
+### Apache Spark
+- **Konfiguracja źródeł Kafka:**  
+  W pliku `spark_processor.py` dla każdego strumienia Kafka (klienci, pracownicy, projekty) dodano:
+  - Opcję `startingOffsets` ustawioną na "earliest", aby konsument pobierał najnowsze metadane.
+  - Opcję `failOnDataLoss` ustawioną na "false", by nie przerywać pracy w przypadku utraty danych.
+- **Watermark i agregacje:**  
+  Dla strumieni "klienci" i "pracownicy" dodano watermark na kolumnie "timestamp" (1 minuta). Agregacje (grupowanie z użyciem funkcji window) są wykonywane z udziałem kolumny czasu, co umożliwia Sparkowi zwolnienie stanu (w trybie append).
+- **Opóźnienie startu zapytań:**  
+  Przed uruchomieniem zapytań writeStream w `spark_processor.py` dodano opóźnienie (time.sleep(60)). Dzięki temu broker Kafka ma czas na utworzenie tematów i propagację metadanych zanim Spark rozpocznie odczyt.
 
-### `klienci.csv`
-```
-id,nazwa,email,kraj,telefon
-1,Firma X,contact@firmax.com,Polska,+48 600 123 456
-2,Firma Y,support@firmay.com,Niemcy,+49 170 987 654
-```
+### MinIO
+- **Konfiguracja MinIO:**  
+  W pliku `setup_minio.py` wykonuje się test połączenia i tworzenie bucketa `processed-data`. Dane wynikowe zapisywane są w MinIO w formacie Parquet.
 
-### `klienci2.csv`
-```
-id,nazwa,email,kraj,telefon
-3,TechNova,contact@technova.io,USA,+1 650 555 0199
-4,Innovate Solutions,info@innovatesol.eu,Holandia,+31 20 123 4567
-5,GreenTech,office@greentech.de,Niemcy,+49 30 789 6543
-```
+## Przepływ Danych
 
-Po załadowaniu obydwu plików do bazy danych, tabela `klienci` zawierać będzie dane zarówno z `klienci.csv`, jak i `klienci2.csv`.
+1. **Import CSV do PostgreSQL**  
+   Skrypt `import_csv_to_postgres.py` importuje pliki CSV z folderu `csv_files` do bazy PostgreSQL. Podobne pliki (np. `klienci.csv` i `klienci2.csv`) są łączone w jedną tabelę.
 
-## Obsługa błędów
-- Jeśli folder nie istnieje, skrypt zgłosi błąd.
-- Jeśli plik CSV jest pusty lub nieprawidłowy, skrypt go pominie.
-- Jeśli tabela już istnieje, nowe dane zostaną do niej dodane (`if_exists='append'`).
+2. **Przechwytywanie zmian przez Debezium**  
+   Debezium monitoruje zmiany w tabelach PostgreSQL i wysyła je jako wiadomości do Kafki. Każdy konektor korzysta z unikalnego replication slotu.
 
-## Licencja
-MIT License
+3. **Przetwarzanie strumieniowe w Spark**  
+   Aplikacja Spark odczytuje dane z Kafki, stosuje agregacje (np. liczenie klientów wg kraju, średni wiek wg stanowiska) z wykorzystaniem window i watermark, a następnie zapisuje wyniki do MinIO.
+
+4. **Zapis wyników do MinIO**  
+   Wyniki agregacji są zapisywane w formacie Parquet w buckecie `processed-data`. Dane te są dostępne poprzez interfejs S3 MinIO.
+
+## Dostęp do Usług
+
+- **PostgreSQL:** localhost:5432  
+- **Kafka:** localhost:9092  
+- **Debezium Connect:** localhost:8083  
+- **Spark Master UI:** localhost:8080  
+- **MinIO Console:** http://localhost:9001 (użytkownik: `minio`, hasło: `minio123`)
+
+## Testowanie Pipeline
+
+Aby upewnić się, że cały pipeline działa:
+1. Sprawdź logi kontenerów (csv_import_app, postgres_db, debezium, kafka, spark-app, minio).
+2. Zaloguj się do bazy PostgreSQL, aby sprawdzić, czy dane są poprawnie importowane.
+3. Użyj narzędzia kafkacat (np. `docker run --rm -it edenhill/kafkacat -b localhost:9092 -L` lub kafkacat z hosta), aby zweryfikować, że tematy istnieją.
+4. Zaloguj się do konsoli MinIO (http://localhost:9001) i sprawdź, czy w buckecie `processed-data` pojawiły się wyniki przetwarzania (pliki Parquet).

@@ -1,23 +1,19 @@
-# Dockerfile dla projektu importującego pliki CSV do PostgreSQL
-
-# Użycie obrazu bazowego z Pythonem
 FROM python:3.10
 
-# Ustawienie katalogu roboczego
+# Set environment variable to prevent bytecode compilation
+# This avoids the "bad marshal data" error
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Set working directory
 WORKDIR /app
 
-# Skopiowanie plików projektu
-COPY . /app
+# Copy requirements and install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Instalacja zależności z wykorzystaniem cache
-RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir -r requirements.txt
+# Copy the application code
+COPY . .
 
-# Ustawienie zmiennych środowiskowych dla bazy danych
-ENV DB_USER=postgres \
-    DB_PASSWORD=password \
-    DB_HOST=localhost \
-    DB_PORT=5432 \
-    DB_NAME=postgres
-
-# Komenda uruchamiająca skrypt
+# Default command
 CMD ["python", "import_csv_to_postgres.py", "--folder", "csv_files"]
