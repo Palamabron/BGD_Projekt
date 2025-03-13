@@ -1,4 +1,4 @@
-# Kompleksowy Pipeline Danych z CSV do Data Lake
+# BGD Pipeline Danych z CSV do Data Lake
 
 Ten projekt implementuje pełny pipeline danych, który importuje pliki CSV do bazy PostgreSQL, monitoruje zmiany w bazie przy użyciu Debezium, przetwarza dane strumieniowo w Apache Spark oraz zapisuje wyniki w MinIO (kompatybilnym z S3).
 
