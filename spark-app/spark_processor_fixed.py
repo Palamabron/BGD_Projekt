@@ -47,7 +47,7 @@ try:
         .format("kafka") \
         .options(**kafka_options) \
         .load()
-
+    
     # Simple processing - just write raw data
     query = kafka_df \
         .selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)", "topic", "partition", "offset", "timestamp") \
@@ -57,10 +57,10 @@ try:
         .option("path", "s3a://processed-data/raw-kafka-data") \
         .trigger(processingTime="10 seconds") \
         .start()
-
+    
     print("Stream processing started")
     query.awaitTermination()
-
+    
 except Exception as e:
     print(f"Error processing Kafka stream: {e}")
     raise e

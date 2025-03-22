@@ -1,8 +1,17 @@
 import requests
 import json
 import time
+import socket
 
 def setup_debezium_connector():
+    # Try to resolve the Kafka hostname to diagnose network issues
+    try:
+        kafka_ip = socket.gethostbyname("kafka")
+        print(f"Successfully resolved kafka to IP: {kafka_ip}")
+    except socket.gaierror:
+        print("WARNING: Unable to resolve 'kafka' hostname from Debezium container")
+    
+    # Use container name instead of localhost
     debezium_url = "http://debezium:8083"
     max_retries = 30
     retries = 0
@@ -14,8 +23,8 @@ def setup_debezium_connector():
             if response.status_code == 200:
                 print("Debezium is ready")
                 break
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Exception connecting to Debezium: {str(e)}")
         
         print(f"Waiting for Debezium to be ready... Retry {retries+1}/{max_retries}")
         retries += 1
@@ -30,7 +39,7 @@ def setup_debezium_connector():
         "name": "klienci-connector",
         "config": {
             "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
-            "database.hostname": "db",
+            "database.hostname": "postgres_db",
             "database.port": "5432",
             "database.user": "postgres",
             "database.password": "password",
@@ -48,7 +57,7 @@ def setup_debezium_connector():
         "name": "pracownicy-connector",
         "config": {
             "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
-            "database.hostname": "db",
+            "database.hostname": "postgres_db",
             "database.port": "5432",
             "database.user": "postgres",
             "database.password": "password",
@@ -66,7 +75,7 @@ def setup_debezium_connector():
         "name": "projekty-connector",
         "config": {
             "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
-            "database.hostname": "db",
+            "database.hostname": "postgres_db",
             "database.port": "5432",
             "database.user": "postgres",
             "database.password": "password",
