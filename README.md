@@ -1,8 +1,37 @@
 # Real-time Data Pipeline with Change Data Capture (CDC)
 
-This project implements a comprehensive real-time data pipeline that captures changes from a PostgreSQL database, streams them through Kafka, processes them with Apache Spark, and stores the results in MinIO (S3-compatible storage).
+## 📋 Quick Start Guide
 
-## Architecture Overview
+```bash
+# Clone the repository
+git clone <repository-url>
+cd <project-directory>
+
+# Start all services
+docker-compose up -d
+
+# Check if all services are running
+docker-compose ps
+
+# Test the pipeline
+./test_pipeline.sh
+
+# Check pipeline status
+python debug_pipeline.py
+```
+
+## 🔍 What This Project Does
+
+This project implements a comprehensive real-time data pipeline that:
+
+1. **Captures changes** from a PostgreSQL database in real-time
+2. **Streams them** through Kafka 
+3. **Processes them** with Apache Spark
+4. **Stores results** in MinIO (S3-compatible storage)
+
+Ideal for building real-time analytics, data warehousing, and event-driven architectures.
+
+## 🏗️ Architecture Overview
 
 ```
 ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
@@ -19,136 +48,45 @@ This project implements a comprehensive real-time data pipeline that captures ch
 └──────────────┘
 ```
 
-## Components in Detail
-
-### 1. PostgreSQL Database
-PostgreSQL serves as the primary data store with logical replication enabled to support Change Data Capture (CDC).
-
-**Key Configuration:**
-- **WAL (Write-Ahead Log) Level**: Set to `logical` to enable CDC
-- **Replication Slots**: Created for each table being monitored
-- **Tables**: klienci (customers), pracownicy (employees), projekty (projects)
-
-**Configuration Example:**
-```
-# postgresql.conf settings for CDC
-wal_level = logical
-max_wal_senders = 10
-max_replication_slots = 10
-```
-
-### 2. Debezium CDC Connectors
-Debezium monitors the PostgreSQL transaction log and converts changes into events.
-
-**Features:**
-- **Publication Management**: Creates and manages PostgreSQL publications
-- **Schema Handling**: Preserves original data schema in change events
-- **Change Events**: Captures INSERT, UPDATE, DELETE operations with before/after states
-
-**Connector Configuration Example:**
-```json
-{
-  "name": "klienci-connector",
-  "config": {
-    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
-    "database.hostname": "postgres_db",
-    "database.port": "5432",
-    "database.user": "postgres",
-    "database.password": "password",
-    "database.dbname": "postgres",
-    "database.server.name": "dbserver1",
-    "table.include.list": "public.klienci",
-    "plugin.name": "pgoutput",
-    "topic.prefix": "dbserver1",
-    "slot.name": "debezium_klienci",
-    "publication.name": "dbz_publication_klienci"
-  }
-}
-```
-
-### 3. Apache Kafka
-Kafka acts as the central message bus for streaming change events.
-
-**Components:**
-- **Topics**: Separate topics for each table (e.g., `dbserver1.public.klienci`)
-- **Zookeeper**: Manages Kafka broker state and configurations
-- **Brokers**: Handles message storage and delivery
-
-**Topic Structure:**
-- Raw change events in JSON format
-- Contains both data and metadata about changes
-- Preserves event ordering for each table
-
-### 4. Apache Spark
-Spark processes the streaming data from Kafka in near real-time.
-
-**Processing Features:**
-- **Structured Streaming**: Processes data in micro-batches
-- **Schema Inference**: Automatically extracts and processes the Debezium schema
-- **Transformations**: Aggregations, filtering, and enrichment of data
-- **Output Modes**: Supports append, update, and complete output modes
-
-**Processing Examples:**
-```python
-# Group customers by country
-df_klienci_by_country = df_klienci \
-    .groupBy("kraj") \
-    .count()
-
-# Calculate average age by position
-df_avg_age_by_position = df_pracownicy \
-    .groupBy("stanowisko") \
-    .avg("wiek")
-```
-
-### 5. MinIO Storage
-MinIO provides S3-compatible object storage for the processed data.
-
-**Storage Features:**
-- **Buckets**: Organized storage for different data types
-- **Formats**: Supports Parquet, CSV, JSON, and other formats
-- **Partitioning**: Data can be partitioned by time or other dimensions
-- **Access Control**: Fine-grained access management
-
-**Bucket Structure:**
-- `processed-data/raw-kafka-data/`: Raw data from Kafka
-- `processed-data/klienci-by-country/`: Aggregated customer data
-- `processed-data/avg-age-by-position/`: Employee statistics
-
-## Directory Structure
+## 📁 Project Structure
 
 ```
-├── csv_files/               # Folder with CSV files
+├── csv_files/               # Sample data files to be imported
 │   ├── klienci.csv          # Customer data
+│   ├── klienci2.csv         # Additional customer data
 │   ├── pracownicy.csv       # Employee data
 │   └── projekty.csv         # Project data
-├── spark-app/               # Spark processing application
-│   ├── Dockerfile           # Docker configuration for Spark
-│   ├── entrypoint.sh        # Startup script
-│   ├── requirements.txt     # Python dependencies
-│   ├── setup_debezium.py    # Configuration for Debezium connectors
-│   ├── setup_minio.py       # MinIO bucket setup
-│   └── spark_processor.py   # Spark streaming application
-├── debug_pipeline.py        # Utility for pipeline troubleshooting
+│
+├── spark-app/               # Spark application code
+│   ├── Dockerfile           # Spark container configuration
+│   ├── entrypoint.sh        # Spark app startup script
+│   ├── requirements.txt     # Python dependencies for Spark
+│   ├── setup_debezium.py    # Script to configure Debezium
+│   ├── setup_minio.py       # Script to setup MinIO buckets
+│   └── spark_processor.py   # Spark streaming job
+│
+├── debug_pipeline.py        # Pipeline troubleshooting utility
 ├── docker-compose.yml       # Docker services configuration
+├── docker-network-diagnostic.sh # Network troubleshooting script
+├── Dockerfile               # Main app Dockerfile
 ├── import_csv_to_postgres.py # CSV to PostgreSQL import script
-├── Dockerfile               # Main application Dockerfile
-├── postgresql.conf          # PostgreSQL configuration
-├── README.md                # This documentation file
+├── kafka-check.sh           # Kafka health check script
+├── pipeline-test.sh         # Pipeline component test script
+├── postgresql.conf          # PostgreSQL CDC configuration
+├── README.md                # This documentation
 ├── requirements.txt         # Python dependencies
-├── setup_pipeline.sh        # Pipeline initialization script
-└── wait-for-kafka.sh        # Kafka readiness check script
+└── test_pipeline.sh         # End-to-end pipeline test script
 ```
 
-## Setup and Deployment
+## 🚀 Getting Started
 
 ### Prerequisites
 
 - Docker and Docker Compose
 - Python 3.10+
-- CSV data files in `/csv_files` directory
+- Git (for cloning the repository)
 
-### Step-by-Step Deployment
+### Installation Steps
 
 1. **Clone the repository**
    ```bash
@@ -156,25 +94,12 @@ MinIO provides S3-compatible object storage for the processed data.
    cd <project-directory>
    ```
 
-2. **Configure PostgreSQL for CDC**
-   Create a `postgresql.conf` file with logical replication enabled:
+2. **Start the services**
    ```bash
-   cat > postgresql.conf << EOF
-   # PostgreSQL configuration for CDC
-   listen_addresses = '*'
-   port = 5432
-   max_connections = 100
-   shared_buffers = 128MB
-   wal_level = logical
-   max_wal_senders = 10
-   max_replication_slots = 10
-   hot_standby = on
-   EOF
-   ```
-
-3. **Start the infrastructure**
-   ```bash
-   # Launch all containers in the correct order
+   # Start all containers at once
+   docker-compose up -d
+   
+   # Or start services in order to avoid dependency issues
    docker-compose up -d zookeeper
    sleep 10
    docker-compose up -d kafka
@@ -188,239 +113,277 @@ MinIO provides S3-compatible object storage for the processed data.
    docker-compose up -d csv_import_app spark-app
    ```
 
-4. **Verify service health**
+3. **Verify the setup**
    ```bash
-   # Check all containers are running
+   # Check if all containers are running
    docker-compose ps
    
-   # Run the pipeline debugging utility
+   # Run the debugging utility to check component status
    python debug_pipeline.py
    ```
 
-## Data Flow Process
+## 💡 How It Works
 
-### 1. CSV Import Process
-The `csv_import_app` container automatically imports CSV files from the `csv_files` directory to PostgreSQL.
+### 1. Data Import from CSV
+
+The `csv_import_app` container reads CSV files from the `csv_files` directory and imports them into PostgreSQL.
+
+**Key Files:**
+- `import_csv_to_postgres.py`: The main script that handles CSV import
+- `csv_files/*.csv`: Source data files
 
 **How it works:**
-1. Scans the `csv_files` directory for CSV files
-2. Maps filenames to database tables
-3. Uses SQLAlchemy to create tables if they don't exist
-4. Imports data using pandas DataFrames
-
-**Example CSV Data (klienci.csv):**
-```csv
-id,nazwa,email,kraj,telefon
-1,"Firma X","contact@firmax.com","Polska","+48 600 123 456"
-2,"Firma Y","support@firmay.com","Niemcy","+49 170 987 654"
+```python
+# From import_csv_to_postgres.py
+def import_csv_to_postgres(folder, db_user, db_password, db_host, db_port, db_name):
+    connection_url = f'postgresql+psycopg2://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
+    engine = create_engine(connection_url)
+    
+    # Process each CSV file in the folder
+    for file in sorted(os.listdir(folder)):
+        if file.endswith('.csv'):
+            table_name = os.path.splitext(file)[0].rstrip("0123456789")
+            # Table name is derived from file name (stripped of numbers)
+            # So klienci.csv and klienci2.csv both go to table 'klienci'
+            
+            # [Code to read CSV and import to PostgreSQL]
 ```
 
-### 2. Change Data Capture Process
-Once data is in PostgreSQL, Debezium captures all changes and publishes them to Kafka.
+**Running manually:**
+```bash
+# Import CSV files to PostgreSQL
+docker-compose run csv_import_app
+```
 
-**CDC Process Flow:**
-1. PostgreSQL writes changes to the WAL
-2. Debezium connectors read from replication slots
-3. Change events are serialized as JSON
-4. Events are published to Kafka topics
+### 2. Change Data Capture with Debezium
 
-**Sample CDC Event:**
-```json
-{
-  "schema": {...},
-  "payload": {
-    "before": null,
-    "after": {
-      "id": 1,
-      "nazwa": "Firma X",
-      "email": "contact@firmax.com",
-      "kraj": "Polska",
-      "telefon": "+48 600 123 456"
-    },
-    "source": {
-      "version": "2.3.4.Final",
-      "connector": "postgresql",
-      "name": "dbserver1",
-      "ts_ms": 1741899497088,
-      "snapshot": "first",
-      "db": "postgres",
-      "schema": "public",
-      "table": "klienci",
-      "txId": 745,
-      "lsn": 24949288
-    },
-    "op": "r",
-    "ts_ms": 1741899497103
-  }
+Debezium monitors PostgreSQL's transaction log and captures changes as they happen.
+
+**Key Files:**
+- `spark-app/setup_debezium.py`: Configures Debezium connectors
+- `postgresql.conf`: Configures PostgreSQL for logical replication
+
+**How it works:**
+```python
+# From setup_debezium.py
+klienci_connector = {
+    "name": "klienci-connector",
+    "config": {
+        "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+        "database.hostname": "postgres_db",
+        "database.port": "5432",
+        "database.user": "postgres",
+        "database.password": "password",
+        "database.dbname": "postgres",
+        "database.server.name": "dbserver1",
+        "table.include.list": "public.klienci",  # Which table to monitor
+        "plugin.name": "pgoutput",               # PostgreSQL output plugin
+        "topic.prefix": "dbserver1",             # Kafka topic prefix
+        "slot.name": "debezium_klienci"          # Replication slot name
+    }
 }
 ```
 
-### 3. Spark Stream Processing
-Spark continuously processes the CDC events from Kafka and applies transformations.
+**PostgreSQL CDC configuration:**
+```
+# postgresql.conf settings for CDC
+wal_level = logical              # Enable logical decoding
+max_wal_senders = 10             # Max number of WAL sender processes
+max_replication_slots = 10       # Max number of replication slots
+```
 
-**Processing Steps:**
-1. Read from Kafka topics using Structured Streaming
-2. Parse the JSON data and extract the payload
-3. Apply transformations and aggregations
-4. Write results to MinIO in different formats
+**Setting up manually:**
+```bash
+# Create a Debezium connector for a table
+curl -X POST -H "Content-Type: application/json" -d @connector-config.json http://localhost:8083/connectors
+```
 
-**Spark Processing Code Example:**
+### 3. Kafka Message Streaming
+
+Kafka receives change events from Debezium and acts as the central message bus.
+
+**Key Files:**
+- `docker-compose.yml`: Configures Kafka and Zookeeper
+- `kafka-check.sh`: Utility script for checking Kafka health
+
+**How it works:**
+- Debezium publishes change events to topics named `dbserver1.public.<table_name>`
+- Events contain the full state of the record before and after the change
+- Kafka maintains these events in order and makes them available to consumers
+
+**Checking Kafka manually:**
+```bash
+# List Kafka topics
+docker exec kafka kafka-topics --bootstrap-server kafka:9092 --list
+
+# View messages in a topic
+docker exec kafka kafka-console-consumer --bootstrap-server kafka:9092 --topic dbserver1.public.klienci --from-beginning --max-messages 3
+```
+
+### 4. Real-time Processing with Spark
+
+Spark reads the change events from Kafka and processes them in near real-time.
+
+**Key Files:**
+- `spark-app/spark_processor.py`: Spark streaming application
+- `spark-app/entrypoint.sh`: Script to start the Spark job
+
+**How it works:**
 ```python
+# From spark_processor.py
 # Read from Kafka
-df_klienci = spark \
+kafka_df = spark \
     .readStream \
     .format("kafka") \
-    .option("kafka.bootstrap.servers", "kafka:9092") \
-    .option("subscribe", "dbserver1.public.klienci") \
-    .option("startingOffsets", "earliest") \
+    .options(**kafka_options) \
     .load()
 
-# Parse JSON and extract data
-df_parsed = df_klienci \
-    .selectExpr("CAST(value AS STRING)") \
-    .select(from_json("value", kafka_schema).alias("data")) \
-    .select("data.payload.after.*")
-
-# Aggregate data
-df_by_country = df_parsed \
-    .groupBy("kraj") \
-    .count()
-
-# Write to MinIO
-query = df_by_country \
+# Process data and write to MinIO
+query = kafka_df \
+    .selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)", "topic", "partition", "offset", "timestamp") \
     .writeStream \
     .format("parquet") \
-    .option("path", "s3a://processed-data/klienci-by-country") \
-    .option("checkpointLocation", "/tmp/checkpoint1") \
+    .option("checkpointLocation", "/tmp/checkpoint-all") \
+    .option("path", "s3a://processed-data/raw-kafka-data") \
+    .trigger(processingTime="10 seconds") \
     .start()
 ```
 
-### 4. Data Storage in MinIO
-Processed data is stored in MinIO in organized buckets and formats.
-
-**Storage Organization:**
-- `/processed-data/raw-kafka-data/`: Raw events from Kafka
-- `/processed-data/klienci-by-country/`: Customer aggregations
-- `/processed-data/avg-age-by-position/`: Employee statistics
-
-**Accessing Data in MinIO:**
+**Checking Spark manually:**
 ```bash
-# List all buckets
-docker exec minio mc ls myminio/
+# Check Spark logs
+docker logs spark-app
 
-# List files in the processed-data bucket
-docker exec minio mc ls myminio/processed-data/ --recursive
-
-# Download a specific file
-docker exec minio mc cp myminio/processed-data/raw-kafka-data/part-00000-xxx.parquet /tmp/
+# Access Spark UI (if available)
+# Open in browser: http://localhost:8080
 ```
 
-## Monitoring and Management
+### 5. Data Storage in MinIO
 
-### Monitoring Components
+Processed data is stored in MinIO in organized buckets.
 
-1. **PostgreSQL Monitoring**
-   ```bash
-   # Check replication slots
-   docker exec postgres_db psql -U postgres -c "SELECT * FROM pg_replication_slots;"
-   
-   # Check publications
-   docker exec postgres_db psql -U postgres -c "SELECT * FROM pg_publication;"
-   
-   # View table data
-   docker exec postgres_db psql -U postgres -c "SELECT * FROM klienci LIMIT 5;"
-   ```
+**Key Files:**
+- `spark-app/setup_minio.py`: Creates MinIO buckets
+- `spark-app/spark_processor.py`: Configures Spark to write to MinIO
 
-2. **Kafka Monitoring**
-   ```bash
-   # List topics
-   docker exec kafka kafka-topics --bootstrap-server kafka:9092 --list
-   
-   # View messages in a topic
-   docker exec kafka kafka-console-consumer --bootstrap-server kafka:9092 --topic dbserver1.public.klienci --from-beginning --max-messages 1
-   
-   # Check topic details
-   docker exec kafka kafka-topics --bootstrap-server kafka:9092 --describe --topic dbserver1.public.klienci
-   ```
+**How it works:**
+```python
+# From setup_minio.py
+# Configure MinIO client
+s3_client = boto3.client(
+    's3',
+    endpoint_url='http://minio:9000',
+    aws_access_key_id='minio',
+    aws_secret_access_key='minio123',
+    config=Config(signature_version='s3v4'),
+    region_name='us-east-1'
+)
 
-3. **Debezium Connector Management**
-   ```bash
-   # List connectors
-   curl -s http://localhost:8083/connectors | jq .
-   
-   # Check connector status
-   curl -s http://localhost:8083/connectors/klienci-connector/status | jq .
-   
-   # Delete a connector
-   curl -X DELETE http://localhost:8083/connectors/klienci-connector
-   
-   # Create a connector
-   curl -X POST -H "Content-Type: application/json" -d '{
-     "name": "klienci-connector",
-     "config": {
-       "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
-       "database.hostname": "postgres_db",
-       "database.port": "5432",
-       "database.user": "postgres",
-       "database.password": "password",
-       "database.dbname": "postgres",
-       "database.server.name": "dbserver1",
-       "table.include.list": "public.klienci",
-       "plugin.name": "pgoutput",
-       "topic.prefix": "dbserver1",
-       "slot.name": "debezium_klienci",
-       "publication.name": "dbz_publication_klienci"
-     }
-   }' http://localhost:8083/connectors
-   ```
+# Create buckets
+s3_client.create_bucket(Bucket='processed-data')
+```
 
-4. **Spark Application Monitoring**
-   ```bash
-   # View Spark logs
-   docker logs spark-app
-   
-   # Access Spark UI
-   # Open in browser: http://localhost:8080
-   
-   # Check Spark jobs
-   docker exec spark-master /opt/bitnami/spark/bin/spark-submit --version
-   ```
+**Accessing MinIO manually:**
+```bash
+# List MinIO buckets
+docker exec minio mc alias set myminio http://localhost:9000 minio minio123
+docker exec minio mc ls myminio/
 
-5. **MinIO Monitoring**
-   ```bash
-   # Configure MinIO client
-   docker exec minio mc alias set myminio http://localhost:9000 minio minio123
-   
-   # List buckets
-   docker exec minio mc ls myminio/
-   
-   # Check bucket size
-   docker exec minio mc du myminio/processed-data/
-   
-   # Access MinIO console
-   # Open in browser: http://localhost:9001
-   # Login with: minio / minio123
-   ```
+# Browse MinIO console
+# Open in browser: http://localhost:9001
+# Login with: minio / minio123
+```
 
-### Advanced Management Tasks
+## 🔧 Debugging and Troubleshooting
 
-1. **Adding New Tables to Monitor**
-   
-   To add a new table to the pipeline:
-   
-   a. Create the table in PostgreSQL:
+This project includes several utility scripts to help you diagnose and fix issues:
+
+### 1. Pipeline Debugging Utility
+
+The `debug_pipeline.py` script is your Swiss Army knife for checking the entire pipeline.
+
+**Usage:**
+```bash
+# Check all components
+python debug_pipeline.py
+
+# Check specific components
+python debug_pipeline.py --component postgres
+python debug_pipeline.py --component kafka
+python debug_pipeline.py --component debezium
+python debug_pipeline.py --component spark
+python debug_pipeline.py --component minio
+```
+
+**What it checks:**
+- PostgreSQL: Table contents, replication slots
+- Kafka: Topics, messages
+- Debezium: Connector status, failed tasks
+- Spark: Master status, workers, applications
+- MinIO: Buckets, objects
+
+### 2. Network Diagnostics
+
+The `docker-network-diagnostic.sh` script helps diagnose network connectivity issues.
+
+**Usage:**
+```bash
+./docker-network-diagnostic.sh
+```
+
+**What it checks:**
+- Docker networks
+- Container IP addresses
+- DNS resolution between containers
+- Kafka connectivity
+
+### 3. Kafka Health Check
+
+The `kafka-check.sh` script specifically checks Kafka status.
+
+**Usage:**
+```bash
+./kafka-check.sh
+```
+
+**What it checks:**
+- Kafka container status
+- Connectivity to broker
+- Topic listing
+- Adds Kafka IP to Debezium's hosts file if needed
+
+### 4. Pipeline Testing
+
+The `test_pipeline.sh` script runs a full end-to-end test of the pipeline.
+
+**Usage:**
+```bash
+./test_pipeline.sh
+```
+
+**What it does:**
+- Inserts test data into PostgreSQL
+- Checks Kafka topics for messages
+- Verifies Debezium connector status
+- Checks MinIO for processed data
+
+## 🧰 Common Tasks
+
+### Adding a New Table to the Pipeline
+
+1. **Create the table in PostgreSQL**
    ```sql
-   CREATE TABLE kategorie (
+   CREATE TABLE categories (
      id SERIAL PRIMARY KEY,
-     nazwa VARCHAR(100),
-     opis TEXT
+     name VARCHAR(100),
+     description TEXT
    );
    ```
-   
-   b. Create a Debezium connector for the table:
+
+2. **Create a Debezium connector for the table**
    ```bash
    curl -X POST -H "Content-Type: application/json" -d '{
-     "name": "kategorie-connector",
+     "name": "categories-connector",
      "config": {
        "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
        "database.hostname": "postgres_db",
@@ -429,229 +392,209 @@ docker exec minio mc cp myminio/processed-data/raw-kafka-data/part-00000-xxx.par
        "database.password": "password",
        "database.dbname": "postgres",
        "database.server.name": "dbserver1",
-       "table.include.list": "public.kategorie",
+       "table.include.list": "public.categories",
        "plugin.name": "pgoutput",
        "topic.prefix": "dbserver1",
-       "slot.name": "debezium_kategorie",
-       "publication.name": "dbz_publication_kategorie"
+       "slot.name": "debezium_categories"
      }
    }' http://localhost:8083/connectors
    ```
-   
-   c. Update the Spark processor to include the new topic.
 
-2. **Scaling the Pipeline**
-   
-   To handle increased load:
-   
-   a. Add more Kafka brokers:
-   ```yaml
-   # Add to docker-compose.yml
-   kafka2:
-     image: confluentinc/cp-kafka:latest
-     depends_on:
-       - zookeeper
-     environment:
-       KAFKA_BROKER_ID: 2
-       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-       # ... other settings
-   ```
-   
-   b. Add more Spark workers:
-   ```yaml
-   # Add to docker-compose.yml
-   spark-worker-2:
-     image: bitnami/spark:latest
-     environment:
-       - SPARK_MODE=worker
-       - SPARK_MASTER_URL=spark://spark-master:7077
-     depends_on:
-       - spark-master
+3. **Update Spark to process the new topic**
+   Edit `spark-app/spark_processor.py` to include the new topic in the subscription:
+   ```python
+   kafka_options = {
+       "kafka.bootstrap.servers": "kafka:9092",
+       "subscribe": "dbserver1.public.klienci,dbserver1.public.pracownicy,dbserver1.public.projekty,dbserver1.public.categories",
+       "startingOffsets": "earliest"
+   }
    ```
 
-## Troubleshooting Guide
+### Adding Custom Transformations
 
-### Common Issues and Solutions
+Edit `spark-app/spark_processor.py` to add custom processing logic:
 
-#### 1. Debezium Connector Fails to Start
+```python
+# Example: Parse JSON and perform aggregations
+from pyspark.sql.functions import from_json, col
+
+# Define schema for your data
+schema = ...
+
+# Parse JSON data
+parsed_df = kafka_df \
+    .selectExpr("CAST(value AS STRING)") \
+    .select(from_json(col("value"), schema).alias("data")) \
+    .select("data.payload.after.*")
+
+# Apply transformations
+transformed_df = parsed_df \
+    .groupBy("some_column") \
+    .agg(...)
+
+# Write to MinIO
+query = transformed_df \
+    .writeStream \
+    .format("parquet") \
+    .option("checkpointLocation", "/tmp/checkpoint-transformed") \
+    .option("path", "s3a://processed-data/transformed-data") \
+    .start()
+```
+
+## 🛠️ Troubleshooting Common Issues
+
+### 1. Debezium Connectors Failing
 
 **Symptoms:**
 - Connector status shows "FAILED"
-- Error mentions "publication already exists"
+- Error about "replication slot already exists"
 
-**Solutions:**
-- Check if publication exists:
-  ```bash
-  docker exec postgres_db psql -U postgres -c "SELECT * FROM pg_publication;"
-  ```
-- Drop the existing publication:
-  ```bash
-  docker exec postgres_db psql -U postgres -c "DROP PUBLICATION dbz_publication_klienci;"
-  ```
-- Recreate the connector with a unique publication name
-
-#### 2. Spark Cannot Read from Kafka Topics
-
-**Symptoms:**
-- Spark logs show "UnknownTopicOrPartitionException"
-- No data is processed
-
-**Solutions:**
-- Verify topic exists:
-  ```bash
-  docker exec kafka kafka-topics --bootstrap-server kafka:9092 --list
-  ```
-- Create topics manually if needed:
-  ```bash
-  docker exec kafka kafka-topics --bootstrap-server kafka:9092 --create --topic dbserver1.public.klienci --partitions 1 --replication-factor 1
-  ```
-- Check Kafka broker connectivity from Spark container
-
-#### 3. PostgreSQL WAL Level Issues
-
-**Symptoms:**
-- Debezium connectors fail with "wal_level property must be logical"
-- Replication slots aren't being created
-
-**Solutions:**
-- Check current WAL level:
-  ```bash
-  docker exec postgres_db psql -U postgres -c "SHOW wal_level;"
-  ```
-- Update WAL level:
-  ```bash
-  docker exec postgres_db psql -U postgres -c "ALTER SYSTEM SET wal_level = logical;"
-  ```
-- Restart PostgreSQL to apply changes:
-  ```bash
-  docker-compose restart postgres_db
-  ```
-
-#### 4. MinIO Connection Issues
-
-**Symptoms:**
-- Cannot list or access data in MinIO
-- Spark writes fail with S3 errors
-
-**Solutions:**
-- Check MinIO is running:
-  ```bash
-  docker ps | grep minio
-  ```
-- Reset MinIO client alias:
-  ```bash
-  docker exec minio mc alias set myminio http://localhost:9000 minio minio123
-  ```
-- Create buckets manually if needed:
-  ```bash
-  docker exec minio mc mb myminio/processed-data
-  ```
-- Check bucket permissions
-
-#### 5. Debugging with Pipeline Tool
-
-Use the included debug utility to check all components:
+**Solution:**
 ```bash
-python debug_pipeline.py --component all
+# Check replication slots
+docker exec postgres_db psql -U postgres -c "SELECT * FROM pg_replication_slots;"
+
+# Drop existing slot if needed
+docker exec postgres_db psql -U postgres -c "SELECT pg_drop_replication_slot('debezium_klienci');"
+
+# Recreate the connector
+curl -X DELETE http://localhost:8083/connectors/klienci-connector
+# Then recreate with POST request
 ```
 
-For specific components:
+### 2. Kafka Connectivity Issues
+
+**Symptoms:**
+- Services can't connect to Kafka
+- "UnknownHostException" in logs
+
+**Solution:**
 ```bash
-python debug_pipeline.py --component kafka
-python debug_pipeline.py --component postgres
-python debug_pipeline.py --component debezium
+# Run the Kafka check script
+./kafka-check.sh
+
+# Or manually fix host resolution
+docker exec debezium bash -c "echo \"$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' kafka) kafka\" >> /etc/hosts"
 ```
 
-### Logging and Diagnostics
+### 3. PostgreSQL WAL Configuration
 
-Viewing logs for each component:
+**Symptoms:**
+- CDC not working
+- "wal_level must be logical" errors
 
+**Solution:**
 ```bash
-# PostgreSQL logs
-docker logs postgres_db
+# Check current WAL level
+docker exec postgres_db psql -U postgres -c "SHOW wal_level;"
 
-# Kafka logs
-docker logs kafka
+# If not set to logical, you need to recreate the container with proper config
+# Make sure postgresql.conf has:
+# wal_level = logical
+# Then restart PostgreSQL
+docker-compose restart postgres_db
+```
 
-# Debezium logs
-docker logs debezium
+### 4. Spark Processing Issues
 
-# Spark application logs
+**Symptoms:**
+- No data in MinIO
+- Errors in Spark logs
+
+**Solution:**
+```bash
+# Check Spark logs
 docker logs spark-app
 
-# MinIO logs
-docker logs minio
+# Verify Kafka topics exist and have data
+docker exec kafka kafka-topics --bootstrap-server kafka:9092 --list
+docker exec kafka kafka-console-consumer --bootstrap-server kafka:9092 --topic dbserver1.public.klienci --from-beginning --max-messages 1
+
+# Restart the Spark app
+docker-compose restart spark-app
 ```
 
-## Performance Optimization
+## 📊 Monitoring the Pipeline
+
+### Checking Component Status
+
+```bash
+# Overall pipeline status
+python debug_pipeline.py
+
+# Docker container status
+docker-compose ps
+
+# PostgreSQL tables and data
+docker exec postgres_db psql -U postgres -c "\dt"
+docker exec postgres_db psql -U postgres -c "SELECT COUNT(*) FROM klienci;"
+
+# Kafka topics
+docker exec kafka kafka-topics --bootstrap-server kafka:9092 --list
+
+# Debezium connectors
+curl -s http://localhost:8083/connectors | jq .
+
+# MinIO buckets and objects
+docker exec minio mc ls myminio/processed-data/ --recursive
+```
+
+### Viewing Logs
+
+```bash
+# View logs for specific services
+docker logs postgres_db
+docker logs kafka
+docker logs debezium
+docker logs spark-app
+docker logs minio
+
+# Follow logs in real-time
+docker logs -f spark-app
+```
+
+## 📈 Performance Optimization
 
 ### PostgreSQL Optimization
 
-- Increase shared buffers for better caching:
-  ```
-  shared_buffers = 256MB
-  ```
-- Optimize WAL settings:
-  ```
-  wal_buffers = 16MB
-  checkpoint_timeout = 10min
-  ```
+Edit `postgresql.conf` to tune PostgreSQL performance:
+
+```
+# Memory settings
+shared_buffers = 256MB  # Increase for better caching (25% of RAM)
+work_mem = 64MB         # Increase for complex queries
+
+# WAL settings
+wal_buffers = 16MB      # Helps with write-heavy workloads
+checkpoint_timeout = 10min  # Less frequent checkpoints
+```
 
 ### Kafka Optimization
 
-- Increase partition count for parallelism:
-  ```bash
-  docker exec kafka kafka-topics --bootstrap-server kafka:9092 --alter --topic dbserver1.public.klienci --partitions 3
-  ```
-- Tune producer/consumer settings in the application
+```bash
+# Increase partition count for parallelism
+docker exec kafka kafka-topics --bootstrap-server kafka:9092 --alter --topic dbserver1.public.klienci --partitions 3
+```
 
 ### Spark Optimization
 
-- Increase memory allocation:
-  ```yaml
-  spark-worker:
-    environment:
-      SPARK_WORKER_MEMORY: 2g
-  ```
-- Optimize executor settings in Spark application:
-  ```python
-  spark = SparkSession.builder \
-      .config("spark.executor.memory", "2g") \
-      .config("spark.executor.cores", 2) \
-      .getOrCreate()
-  ```
+Edit `docker-compose.yml` to give Spark more resources:
 
-## Extending the Pipeline
+```yaml
+spark-worker:
+  environment:
+    - SPARK_WORKER_MEMORY=2g
+    - SPARK_WORKER_CORES=2
+```
 
-### Adding Data Transformations
-
-To add new data transformations:
-
-1. Edit `spark-app/spark_processor.py`
-2. Add new processing logic:
-   ```python
-   # Example: Calculate revenue per customer
-   df_revenue = df_klienci \
-       .join(df_orders, "id") \
-       .groupBy("nazwa") \
-       .sum("order_value") \
-       .withColumnRenamed("sum(order_value)", "total_revenue")
-   
-   # Write to new location
-   query3 = df_revenue \
-       .writeStream \
-       .outputMode("complete") \
-       .format("parquet") \
-       .option("checkpointLocation", "/tmp/checkpoint3") \
-       .option("path", "s3a://processed-data/customer-revenue") \
-       .start()
-   ```
+## 🔄 Extending the Pipeline
 
 ### Adding Data Quality Checks
 
-Implement data quality checks in Spark:
-
 ```python
+# In spark_processor.py
+from pyspark.sql.functions import col, when, count
+
 # Check for missing values
 df_quality = df_parsed \
     .select([count(when(col(c).isNull(), c)).alias(c) for c in df_parsed.columns])
@@ -664,13 +607,36 @@ df_quality \
     .start()
 ```
 
-### Building Dashboards
+### Adding Real-time Analytics
 
-1. Connect visualization tools to MinIO:
-   - Configure Superset, Tableau, or PowerBI with S3 connection
-   - Set up credentials for MinIO access
-   
-2. Create views over processed data:
-   - Customer distribution by country
-   - Employee age demographics
-   - Project timeline visualization
+```python
+# In spark_processor.py
+# Calculate real-time metrics
+metrics_df = df_parsed \
+    .withWatermark("timestamp", "10 minutes") \
+    .groupBy(window(col("timestamp"), "5 minutes"), col("event_type")) \
+    .count()
+
+# Output to separate MinIO location
+metrics_df \
+    .writeStream \
+    .format("parquet") \
+    .option("path", "s3a://processed-data/metrics") \
+    .option("checkpointLocation", "/tmp/checkpoint-metrics") \
+    .start()
+```
+
+## 📚 Additional Resources
+
+- [Debezium Documentation](https://debezium.io/documentation/)
+- [Apache Kafka Documentation](https://kafka.apache.org/documentation/)
+- [Apache Spark Documentation](https://spark.apache.org/docs/latest/)
+- [MinIO Documentation](https://docs.min.io/)
+
+## 📝 License
+
+[Your license information here]
+
+## 👥 Contributors
+
+[Your contributor information here]
