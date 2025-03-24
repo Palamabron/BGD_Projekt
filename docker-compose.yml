@@ -19,7 +19,6 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      # Fix the listener configuration to use different ports
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
@@ -28,33 +27,35 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      # Give Kafka more memory
       KAFKA_HEAP_OPTS: "-Xmx512M -Xms256M"
-    restart: on-failure:3
+      # Ważne! Wymaga nowego woluminu bez istniejącego ID klastra
+      KAFKA_OPTS: "-Dlog4j.rootLogger=INFO"
+    restart: always
+    user: root
     volumes:
-      - kafka_data:/var/lib/kafka/data
+      - kafka_data_clean:/var/lib/kafka/data
+      - ./kafka-init.sh:/kafka-init.sh
+    command: ["/bin/bash", "/kafka-init.sh"]
 
   postgres_db:
-      image: postgres:15
-      container_name: postgres_db
-      environment:
-        POSTGRES_USER: postgres
-        POSTGRES_PASSWORD: password
-        POSTGRES_DB: postgres
-        # Add PostgreSQL configuration for Debezium CDC
-        POSTGRES_INITDB_ARGS: "--data-checksums"
-      ports:
-        - "5432:5432"
-      volumes:
-        - pgdata:/var/lib/postgresql/data
-        # Add custom PostgreSQL configuration file
-        - ./postgresql.conf:/etc/postgresql/postgresql.conf
-      command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
-      healthcheck:
-        test: ["CMD-SHELL", "pg_isready -U postgres"]
-        interval: 30s
-        timeout: 10s
-        retries: 5
+    image: postgres:15
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgresql.conf:/etc/postgresql/postgresql.conf
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   debezium:
     image: debezium/connect:2.3
@@ -74,18 +75,12 @@ services:
       VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
       KEY_CONVERTER_SCHEMAS_ENABLE: "false"
       VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
-      # Add explicit hostname configuration
       CONNECT_REST_ADVERTISED_HOST_NAME: localhost
-      # Add explicit hostname settings
       CONNECT_HOST_NAME: debezium
-      # Make sure Kafka hostname is resolvable
-      # Add extra JVM parameters for DNS resolution
       KAFKA_OPTS: "-Dsun.net.inetaddr.ttl=30 -Dsun.net.inetaddr.negative.ttl=30"
-    # Explicitly link to the Kafka container
     links:
       - kafka
-    # Ensure Debezium waits for Kafka to be ready
-    restart: on-failure:5
+    restart: always
 
   minio:
     image: minio/minio:latest
@@ -129,50 +124,48 @@ services:
       - SPARK_MASTER_URL=spark://spark-master:7077
 
   csv_import_app:
-      build: .
-      container_name: csv_import_app
-      depends_on:
-        - postgres_db
-      environment:
-        DB_USER: postgres
-        DB_PASSWORD: password
-        DB_HOST: postgres_db
-        DB_PORT: 5432
-        DB_NAME: postgres
-        PYTHONDONTWRITEBYTECODE: 1
-      volumes:
-        - ./csv_files:/app/csv_files
-      command: ["python", "import_csv_to_postgres.py", "--folder", "csv_files", "--db_host", "postgres_db"]
+    build: .
+    container_name: csv_import_app
+    depends_on:
+      - postgres_db
+    environment:
+      DB_USER: postgres
+      DB_PASSWORD: password
+      DB_HOST: postgres_db
+      DB_PORT: 5432
+      DB_NAME: postgres
+      PYTHONDONTWRITEBYTECODE: 1
+    volumes:
+      - ./csv_files:/app/csv_files
+    command: ["python", "import_csv_to_postgres.py", "--folder", "csv_files", "--db_host", "postgres_db"]
 
   spark-app:
-      build:
-        context: ./spark-app
-      container_name: spark-app
-      depends_on:
-        - spark-master
-        - kafka
-        - minio
-        - debezium
-      volumes:
-        - ./spark-app:/app
-      # Add explicit network links to ensure DNS resolution
-      links:
-        - debezium
-        - kafka
-        - postgres_db
-      environment:
-        # Add explicit environment variables for service discovery
-        DEBEZIUM_HOST: debezium
-        KAFKA_HOST: kafka
-        MINIO_HOST: minio
-        POSTGRES_HOST: postgres_db
-      # Make the container wait for Debezium to be fully initialized
-      restart: on-failure:3
+    build:
+      context: ./spark-app
+    container_name: spark-app
+    depends_on:
+      - spark-master
+      - kafka
+      - minio
+      - debezium
+    volumes:
+      - ./spark-app:/app
+    links:
+      - debezium
+      - kafka
+      - postgres_db
+    environment:
+      DEBEZIUM_HOST: debezium
+      KAFKA_HOST: kafka
+      MINIO_HOST: minio
+      POSTGRES_HOST: postgres_db
+    restart: always
 
 volumes:
   pgdata:
   minio_data:
-  kafka_data:
+  kafka_data_clean:  # Nowa nazwa woluminu, aby uniknąć konfliktu ze starymi danymi
+    name: kafka_data_clean
 
 networks:
   default:

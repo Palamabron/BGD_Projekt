@@ -34,7 +34,19 @@ def setup_debezium_connector():
         print("Failed to connect to Debezium")
         return
 
-    # Konfiguracja konektora dla tabeli "klienci" z unikalnym replication slot
+    # First, delete any existing connectors to avoid conflicts
+    try:
+        response = requests.get(f"{debezium_url}/connectors")
+        if response.status_code == 200:
+            existing_connectors = response.json()
+            for connector in existing_connectors:
+                print(f"Deleting existing connector: {connector}")
+                requests.delete(f"{debezium_url}/connectors/{connector}")
+                time.sleep(2)  # Give some time between deletions
+    except Exception as e:
+        print(f"Error deleting existing connectors: {str(e)}")
+
+    # Konfiguracja konektora dla tabeli "klienci" z unikalnym replication slot i publication
     klienci_connector = {
         "name": "klienci-connector",
         "config": {
@@ -48,11 +60,12 @@ def setup_debezium_connector():
             "table.include.list": "public.klienci",
             "plugin.name": "pgoutput",
             "topic.prefix": "dbserver1",
-            "slot.name": "debezium_klienci"
+            "slot.name": "debezium_klienci",
+            "publication.name": "dbz_publication_klienci"  # Unique publication name
         }
     }
     
-    # Konfiguracja konektora dla tabeli "pracownicy" z unikalnym replication slot
+    # Konfiguracja konektora dla tabeli "pracownicy" z unikalnym replication slot i publication
     pracownicy_connector = {
         "name": "pracownicy-connector",
         "config": {
@@ -66,11 +79,12 @@ def setup_debezium_connector():
             "table.include.list": "public.pracownicy",
             "plugin.name": "pgoutput",
             "topic.prefix": "dbserver1",
-            "slot.name": "debezium_pracownicy"
+            "slot.name": "debezium_pracownicy",
+            "publication.name": "dbz_publication_pracownicy"  # Unique publication name
         }
     }
     
-    # Konfiguracja konektora dla tabeli "projekty" z unikalnym replication slot
+    # Konfiguracja konektora dla tabeli "projekty" z unikalnym replication slot i publication
     projekty_connector = {
         "name": "projekty-connector",
         "config": {
@@ -84,13 +98,15 @@ def setup_debezium_connector():
             "table.include.list": "public.projekty",
             "plugin.name": "pgoutput",
             "topic.prefix": "dbserver1",
-            "slot.name": "debezium_projekty"
+            "slot.name": "debezium_projekty",
+            "publication.name": "dbz_publication_projekty"  # Unique publication name
         }
     }
     
     # Rejestracja konektorów
     for connector in [klienci_connector, pracownicy_connector, projekty_connector]:
         try:
+            print(f"Registering connector: {connector['name']}")
             response = requests.post(
                 f"{debezium_url}/connectors",
                 headers={"Content-Type": "application/json"},
@@ -101,6 +117,9 @@ def setup_debezium_connector():
             else:
                 print(f"Failed to register connector: {connector['name']}")
                 print(f"Response: {response.status_code} - {response.text}")
+            
+            # Wait a bit between connector registrations to avoid race conditions
+            time.sleep(5)
         except Exception as e:
             print(f"Error registering connector {connector['name']}: {str(e)}")
 

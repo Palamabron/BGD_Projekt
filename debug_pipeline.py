@@ -8,21 +8,34 @@ in the data pipeline and diagnose common issues.
 
 import argparse
 import os
-import sys
 import subprocess
-import json
+import time
+import logging
 import requests
-from tabulate import tabulate
 import psycopg2
 import boto3
 from botocore.client import Config
 from kafka import KafkaConsumer, KafkaAdminClient
-from kafka.admin import NewTopic
-from kafka.errors import TopicAlreadyExistsError, NoBrokersAvailable
+from kafka.errors import NoBrokersAvailable
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def retry_operation(func, retries=3, delay=5, *args, **kwargs):
+    """Helper function to retry an operation."""
+    for attempt in range(1, retries + 1):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            logging.warning(f"Attempt {attempt} failed with error: {e}")
+            if attempt < retries:
+                time.sleep(delay)
+            else:
+                raise
 
 def check_docker_services():
     """Check the status of Docker services"""
-    print("\n=== Checking Docker Services ===")
+    logging.info("=== Checking Docker Services ===")
     
     try:
         result = subprocess.run(
@@ -31,11 +44,9 @@ def check_docker_services():
             text=True,
             check=True
         )
-        
         # Parse the output to get service status
         lines = result.stdout.strip().split('\n')[1:]  # Skip header
         services = []
-        
         for line in lines:
             parts = line.split()
             if len(parts) >= 3:
@@ -44,27 +55,27 @@ def check_docker_services():
                 healthy = "Healthy" if "healthy" in line else "N/A"
                 services.append([service_name, status, healthy])
         
-        print(tabulate(services, headers=["Service", "Status", "Health"]))
+        logging.info("Service Status:")
+        for s in services:
+            logging.info(f" - {s[0]}: {s[1]}, Health: {s[2]}")
         
-        # Check for stopped services
         stopped_services = [s[0] for s in services if s[1] == "Stopped"]
         if stopped_services:
-            print(f"\nWARNING: The following services are not running: {', '.join(stopped_services)}")
-            print("You can check their logs with: docker-compose logs <service_name>")
+            logging.warning(f"Following services are not running: {', '.join(stopped_services)}")
+            logging.info("Check logs with: docker-compose logs <service_name>")
         
     except subprocess.CalledProcessError as e:
-        print(f"Error checking Docker services: {e}")
+        logging.error(f"Error checking Docker services: {e}")
         return False
     
     return True
 
 def check_postgres_db(host="localhost", port=5432, user="postgres", password="password", dbname="postgres"):
     """Check PostgreSQL database connectivity and table contents"""
-    print("\n=== Checking PostgreSQL Database ===")
+    logging.info("=== Checking PostgreSQL Database ===")
     
     try:
-        # Connect to the database
-        print(f"Connecting to PostgreSQL: {host}:{port}/{dbname} as {user}...")
+        logging.info(f"Connecting to PostgreSQL: {host}:{port}/{dbname} as {user}...")
         conn = psycopg2.connect(
             host=host,
             port=port,
@@ -72,86 +83,74 @@ def check_postgres_db(host="localhost", port=5432, user="postgres", password="pa
             password=password,
             dbname=dbname
         )
-        
         cursor = conn.cursor()
         
-        # Get list of tables
         cursor.execute("""
             SELECT table_name 
             FROM information_schema.tables 
             WHERE table_schema='public'
         """)
-        
         tables = [row[0] for row in cursor.fetchall()]
         
         if not tables:
-            print("No tables found in the database.")
+            logging.error("No tables found in the database.")
             return False
         
-        print(f"Found {len(tables)} tables: {', '.join(tables)}")
+        logging.info(f"Found {len(tables)} tables: {', '.join(tables)}")
         
-        # Check table contents
         table_counts = []
         for table in tables:
             cursor.execute(f'SELECT COUNT(*) FROM "{table}"')
             count = cursor.fetchone()[0]
             table_counts.append([table, count])
         
-        print("\nTable record counts:")
-        print(tabulate(table_counts, headers=["Table", "Record Count"]))
+        logging.info("Table record counts:")
+        for table, count in table_counts:
+            logging.info(f" - {table}: {count} records")
         
-        # Check replication slots
         cursor.execute("""
             SELECT slot_name, plugin, active 
             FROM pg_replication_slots
         """)
-        
         slots = cursor.fetchall()
         
         if slots:
-            print("\nReplication slots:")
-            slots_table = [[slot[0], slot[1], "Active" if slot[2] else "Inactive"] for slot in slots]
-            print(tabulate(slots_table, headers=["Slot Name", "Plugin", "Status"]))
+            logging.info("Replication slots:")
+            for slot in slots:
+                status = "Active" if slot[2] else "Inactive"
+                logging.info(f" - {slot[0]} (Plugin: {slot[1]}): {status}")
         else:
-            print("\nNo replication slots found.")
+            logging.info("No replication slots found.")
         
         cursor.close()
         conn.close()
         
     except Exception as e:
-        print(f"Error connecting to PostgreSQL: {e}")
+        logging.error(f"Error connecting to PostgreSQL: {e}", exc_info=True)
         return False
     
     return True
 
 def check_kafka(bootstrap_servers="localhost:9092"):
     """Check Kafka broker and topics"""
-    print("\n=== Checking Kafka Broker ===")
+    logging.info("=== Checking Kafka Broker ===")
     
     try:
-        # Create admin client
-        print(f"Connecting to Kafka broker: {bootstrap_servers}...")
+        logging.info(f"Connecting to Kafka broker: {bootstrap_servers}...")
         admin_client = KafkaAdminClient(bootstrap_servers=bootstrap_servers)
         
-        # Check topics
         topics = admin_client.list_topics()
-        
         if not topics:
-            print("No topics found in Kafka.")
+            logging.error("No topics found in Kafka.")
             return False
         
-        print(f"Found {len(topics)} topics:")
-        print(", ".join(topics))
+        logging.info(f"Found {len(topics)} topics: {', '.join(topics)}")
         
-        # Check specific topics
         debezium_topics = [t for t in topics if t.startswith("dbserver1.public")]
-        
         if debezium_topics:
-            print("\nDebezium CDC topics:")
+            logging.info("Debezium CDC topics:")
             for topic in debezium_topics:
-                print(f"  - {topic}")
-                
-                # Try to get messages
+                logging.info(f"  - {topic}")
                 try:
                     consumer = KafkaConsumer(
                         topic,
@@ -160,81 +159,74 @@ def check_kafka(bootstrap_servers="localhost:9092"):
                         consumer_timeout_ms=5000,
                         max_poll_records=5
                     )
-                    
                     messages = list(consumer)
                     message_count = len(messages)
                     
                     if message_count > 0:
-                        print(f"    • Contains {message_count} messages")
-                        # Print first message sample
-                        if message_count > 0:
-                            first_msg = messages[0].value.decode('utf-8')
-                            print(f"    • Sample message (truncated): {first_msg[:200]}...")
+                        logging.info(f"    Contains {message_count} messages")
+                        first_msg = messages[0].value.decode('utf-8')
+                        logging.info(f"    Sample message (truncated): {first_msg[:200]}...")
                     else:
-                        print("    • No messages found")
+                        logging.info("    No messages found")
                     
                     consumer.close()
-                
                 except Exception as e:
-                    print(f"    • Error reading messages: {e}")
+                    logging.error(f"Error reading messages from topic {topic}: {e}")
         
         admin_client.close()
         
     except NoBrokersAvailable:
-        print("Error: Could not connect to Kafka broker")
+        logging.error("Error: Could not connect to Kafka broker")
         return False
     except Exception as e:
-        print(f"Error checking Kafka: {e}")
+        logging.error(f"Error checking Kafka: {e}", exc_info=True)
         return False
     
     return True
 
 def check_debezium(host="localhost", port=8083):
     """Check Debezium Connect status and connectors"""
-    print("\n=== Checking Debezium Connect ===")
+    logging.info("=== Checking Debezium Connect ===")
     
     try:
-        # Check if Debezium is running
-        print(f"Connecting to Debezium Connect: http://{host}:{port}...")
-        response = requests.get(f"http://{host}:{port}/connectors")
+        url = f"http://{host}:{port}/connectors"
+        logging.info(f"Connecting to Debezium Connect: {url}...")
+        
+        # Retry logic for Debezium connection
+        response = retry_operation(requests.get, 3, 5, url)
         
         if response.status_code != 200:
-            print(f"Error: Debezium Connect returned status code {response.status_code}")
+            logging.error(f"Error: Debezium Connect returned status code {response.status_code}")
             return False
         
         connectors = response.json()
         
         if not connectors:
-            print("No connectors found in Debezium Connect.")
+            logging.error("No connectors found in Debezium Connect.")
             return False
         
-        print(f"Found {len(connectors)} connectors: {', '.join(connectors)}")
+        logging.info(f"Found {len(connectors)} connectors: {', '.join(connectors)}")
         
-        # Check connector status
         connector_status = []
-        
         for connector in connectors:
             try:
-                status_response = requests.get(f"http://{host}:{port}/connectors/{connector}/status")
-                
+                status_url = f"http://{host}:{port}/connectors/{connector}/status"
+                status_response = retry_operation(requests.get, 3, 5, status_url)
                 if status_response.status_code == 200:
                     status_json = status_response.json()
                     connector_state = status_json.get("connector", {}).get("state", "UNKNOWN")
                     tasks = status_json.get("tasks", [])
                     task_states = [task.get("state", "UNKNOWN") for task in tasks]
-                    
-                    # Check if there are failed tasks
                     failed_tasks = [i for i, state in enumerate(task_states) if state == "FAILED"]
                     
                     if failed_tasks:
-                        # Get error information for failed tasks
                         for task_id in failed_tasks:
-                            trace_response = requests.get(f"http://{host}:{port}/connectors/{connector}/tasks/{task_id}/status")
+                            trace_url = f"http://{host}:{port}/connectors/{connector}/tasks/{task_id}/status"
+                            trace_response = retry_operation(requests.get, 3, 5, trace_url)
                             if trace_response.status_code == 200:
                                 trace_json = trace_response.json()
                                 trace = trace_json.get("trace", "No trace available")
-                                print(f"\nError in connector {connector}, task {task_id}:")
-                                print(trace[:500] + "..." if len(trace) > 500 else trace)
+                                logging.error(f"Error in connector {connector}, task {task_id}: {trace[:500]}")
                     
                     connector_status.append([
                         connector,
@@ -244,94 +236,69 @@ def check_debezium(host="localhost", port=8083):
                     ])
                 else:
                     connector_status.append([connector, "ERROR", f"HTTP {status_response.status_code}", "?"])
-            
             except Exception as e:
                 connector_status.append([connector, "ERROR", str(e), "?"])
         
-        print("\nConnector Status:")
-        print(tabulate(connector_status, headers=["Connector", "State", "Tasks", "Failed Tasks"]))
+        logging.info("Connector Status:")
+        for status in connector_status:
+            logging.info(f" - {status[0]}: {status[1]}, Tasks: {status[2]}, Failed: {status[3]}")
         
     except requests.exceptions.ConnectionError:
-        print("Error: Could not connect to Debezium Connect")
+        logging.error("Error: Could not connect to Debezium Connect")
         return False
     except Exception as e:
-        print(f"Error checking Debezium Connect: {e}")
+        logging.error(f"Error checking Debezium Connect: {e}", exc_info=True)
         return False
     
     return True
 
 def check_spark(host="localhost", port=8080):
     """Check Spark Master and running applications"""
-    print("\n=== Checking Apache Spark ===")
+    logging.info("=== Checking Apache Spark ===")
     
     try:
-        # Check if Spark Master is running
-        print(f"Connecting to Spark Master: http://{host}:{port}...")
-        response = requests.get(f"http://{host}:{port}/json/")
+        url = f"http://{host}:{port}/json/"
+        logging.info(f"Connecting to Spark Master: {url}...")
+        response = retry_operation(requests.get, 3, 5, url)
         
         if response.status_code != 200:
-            print(f"Error: Spark Master returned status code {response.status_code}")
+            logging.error(f"Error: Spark Master returned status code {response.status_code}")
             return False
         
         status_json = response.json()
         
-        # Print Spark cluster info
         workers = status_json.get("workers", [])
         apps = status_json.get("activeapps", [])
         
-        print(f"Spark Master Status: {status_json.get('status', 'UNKNOWN')}")
-        print(f"Workers: {len(workers)}")
-        print(f"Running Applications: {len(apps)}")
+        logging.info(f"Spark Master Status: {status_json.get('status', 'UNKNOWN')}")
+        logging.info(f"Workers: {len(workers)}")
+        logging.info(f"Running Applications: {len(apps)}")
         
-        # Print worker details
         if workers:
-            worker_table = [
-                [
-                    w.get("id", "?"),
-                    w.get("state", "UNKNOWN"),
-                    f"{w.get('cores', 0)} cores",
-                    f"{w.get('memory', 0)} MB"
-                ] for w in workers
-            ]
-            
-            print("\nWorkers:")
-            print(tabulate(worker_table, headers=["Worker ID", "State", "Cores", "Memory"]))
+            for w in workers:
+                logging.info(f"Worker {w.get('id', '?')}: State {w.get('state', 'UNKNOWN')}, Cores: {w.get('cores', 0)}, Memory: {w.get('memory', 0)} MB")
         
-        # Print application details
         if apps:
-            app_table = [
-                [
-                    a.get("id", "?"),
-                    a.get("name", "?"),
-                    a.get("state", "UNKNOWN"),
-                    a.get("cores", 0),
-                    a.get("memoryperslave", 0),
-                    a.get("starttime", "?")
-                ] for a in apps
-            ]
-            
-            print("\nRunning Applications:")
-            print(tabulate(app_table, headers=["App ID", "Name", "State", "Cores", "Memory", "Start Time"]))
+            for a in apps:
+                logging.info(f"App {a.get('id', '?')}: {a.get('name', '?')}, State: {a.get('state', 'UNKNOWN')}, Cores: {a.get('cores', 0)}, Memory: {a.get('memoryperslave', 0)} MB, Start Time: {a.get('starttime', '?')}")
         else:
-            print("\nNo Spark applications are running.")
-            print("This could indicate an issue with the Spark job submission or the job has completed.")
+            logging.warning("No Spark applications are running. This may indicate an issue with job submission or completed jobs.")
         
     except requests.exceptions.ConnectionError:
-        print("Error: Could not connect to Spark Master")
+        logging.error("Error: Could not connect to Spark Master")
         return False
     except Exception as e:
-        print(f"Error checking Spark: {e}")
+        logging.error(f"Error checking Spark: {e}", exc_info=True)
         return False
     
     return True
 
 def check_minio(endpoint="http://localhost:9000", access_key="minio", secret_key="minio123"):
     """Check MinIO server and buckets"""
-    print("\n=== Checking MinIO Storage ===")
+    logging.info("=== Checking MinIO Storage ===")
     
     try:
-        # Create MinIO client
-        print(f"Connecting to MinIO: {endpoint}...")
+        logging.info(f"Connecting to MinIO: {endpoint}...")
         s3_client = boto3.client(
             's3',
             endpoint_url=endpoint,
@@ -340,59 +307,43 @@ def check_minio(endpoint="http://localhost:9000", access_key="minio", secret_key
             config=Config(signature_version='s3v4'),
             region_name='us-east-1'
         )
-        
-        # List buckets
         response = s3_client.list_buckets()
         buckets = response.get('Buckets', [])
         
         if not buckets:
-            print("No buckets found in MinIO.")
+            logging.error("No buckets found in MinIO.")
             return False
         
-        print(f"Found {len(buckets)} buckets:")
-        
+        logging.info(f"Found {len(buckets)} buckets.")
         for bucket in buckets:
             bucket_name = bucket.get('Name')
-            print(f"\n- Bucket: {bucket_name}")
-            
-            # List objects in bucket
+            logging.info(f"Bucket: {bucket_name}")
             try:
                 objects = s3_client.list_objects_v2(Bucket=bucket_name)
                 contents = objects.get('Contents', [])
-                
                 if contents:
-                    print(f"  Contains {len(contents)} objects:")
-                    
-                    # Group objects by prefix (folder)
+                    logging.info(f"  Contains {len(contents)} objects.")
                     prefixes = {}
                     for obj in contents:
                         key = obj.get('Key', '')
                         size = obj.get('Size', 0)
-                        
-                        # Get prefix (folder)
                         if '/' in key:
                             prefix = key.split('/')[0]
                             if prefix not in prefixes:
-                                prefixes[prefix] = {
-                                    'count': 0,
-                                    'size': 0
-                                }
+                                prefixes[prefix] = {'count': 0, 'size': 0}
                             prefixes[prefix]['count'] += 1
                             prefixes[prefix]['size'] += size
                         else:
-                            print(f"  • {key} ({size} bytes)")
-                    
-                    # Print folder summaries
+                            logging.info(f"  - {key} ({size} bytes)")
                     for prefix, stats in prefixes.items():
-                        print(f"  • {prefix}/ - {stats['count']} objects, {stats['size']} bytes total")
+                        logging.info(f"  - {prefix}/: {stats['count']} objects, {stats['size']} bytes total")
                 else:
-                    print("  Bucket is empty")
-            
+                    logging.info("  Bucket is empty")
             except Exception as e:
-                print(f"  Error listing objects: {e}")
+                logging.error(f"Error listing objects in bucket {bucket_name}: {e}")
         
     except Exception as e:
-        print(f"Error checking MinIO: {e}")
+        logging.error(f"Error checking MinIO: {e}", exc_info=True)
         return False
     
     return True
@@ -405,7 +356,6 @@ def main():
     
     args = parser.parse_args()
     
-    # Run checks based on component selection
     if args.component in ["all", "docker"]:
         check_docker_services()
     
@@ -424,7 +374,7 @@ def main():
     if args.component in ["all", "minio"]:
         check_minio(endpoint=f"http://{args.host}:9000")
     
-    print("\n=== Debug Check Complete ===")
+    logging.info("=== Debug Check Complete ===")
 
 if __name__ == "__main__":
     main()

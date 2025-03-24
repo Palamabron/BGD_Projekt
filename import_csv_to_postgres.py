@@ -2,7 +2,7 @@ import os
 import argparse
 import pandas as pd
 import logging
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text, inspect
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -24,10 +24,16 @@ def import_csv_to_postgres(folder, db_user, db_password, db_host, db_port, db_na
             try:
                 df = pd.read_csv(file_path)
                 logging.info(f"Loading file '{file_path}' into table '{table_name}'")
+                
                 # Basic data validation: check if DataFrame is not empty
                 if df.empty:
                     logging.warning(f"File '{file_path}' is empty. Skipping.")
                     continue
+                
+                # Remove 'id' column if exists - we'll create our own
+                if 'id' in df.columns:
+                    df = df.drop(columns=['id'])
+                    logging.info(f"Dropped 'id' column from file '{file_path}' to use auto-incrementing PK")
                 
                 if table_name in tables:
                     tables[table_name] = pd.concat([tables[table_name], df], ignore_index=True)
@@ -36,10 +42,34 @@ def import_csv_to_postgres(folder, db_user, db_password, db_host, db_port, db_na
             except Exception as e:
                 logging.error(f"Error loading file '{file_path}': {e}", exc_info=True)
 
+    inspector = inspect(engine)
+    
     for table_name, df in tables.items():
         try:
-            df.to_sql(table_name, engine, if_exists='append', index=False)
-            logging.info(f"Data for table '{table_name}' has been inserted into PostgreSQL.")
+            # Drop existing table if exists
+            with engine.connect() as conn:
+                if inspector.has_table(table_name):
+                    conn.execute(text(f'DROP TABLE IF EXISTS {table_name} CASCADE;'))
+                    conn.commit()
+                    logging.info(f"Dropped existing table '{table_name}'")
+            
+            # Remove duplicate rows based on all columns
+            original_count = len(df)
+            df = df.drop_duplicates()
+            if len(df) < original_count:
+                logging.info(f"Removed {original_count - len(df)} duplicate rows from '{table_name}'")
+            
+            # Create a new table without the 'id' column
+            df.to_sql(table_name, engine, if_exists='replace', index=False)
+            
+            # Add an auto-incrementing primary key
+            with engine.connect() as conn:
+                conn.execute(text(f'ALTER TABLE {table_name} ADD COLUMN id SERIAL PRIMARY KEY;'))
+                conn.commit()
+                logging.info(f"Added auto-incrementing primary key to table '{table_name}'")
+            
+            logging.info(f"Successfully imported {len(df)} rows into table '{table_name}'")
+            
         except Exception as e:
             logging.error(f"Error writing to table '{table_name}': {e}", exc_info=True)
 
